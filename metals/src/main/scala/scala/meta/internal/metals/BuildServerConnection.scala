@@ -140,10 +140,11 @@ class BuildServerConnection private (
   def isDependencyModulesSupported: Boolean =
     capabilities.getDependencyModulesProvider() && !isScalaCLI
 
-  /* Currently only Bloop and sbt support running single test cases
+  /* Currently Bloop, sbt, bazel and mill support running single test cases
    * and ScalaCLI uses Bloop underneath.
    */
-  def supportsTestSelection: Boolean = isBloop || isSbt || isScalaCLI
+  def supportsTestSelection: Boolean =
+    isBloop || isSbt || isScalaCLI || isBazel || isMill
 
   /* Some users may still use an old version of Bloop that relies on scala-debug-adapter 1.x.
    * Metals does not support scala-debug-adapter 1.x anymore.
