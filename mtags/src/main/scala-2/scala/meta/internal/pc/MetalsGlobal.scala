@@ -268,6 +268,136 @@ class MetalsGlobal(
     buffer.toList
   }
 
+  /**
+   * Find all implicit class extension methods available for a specific type.
+   *
+   * This method searches for implicit classes (using search.search()) and then extracts
+   * their methods using the presentation compiler. This works for both workspace and
+   * classpath implicit classes.
+   *
+   * @param targetType The type for which to find implicit extensions (e.g., Int, String)
+   * @param pos The position in the source code (used for context and accessibility checks)
+   * @return A list of all methods from implicit classes that can extend targetType
+   */
+  def findImplicitExtensionsForType(
+      targetType: Type,
+      pos: Position
+  ): List[WorkspaceImplicitMember] = {
+    logger.info(s"[MetalsGlobal.findImplicitExtensionsForType] Searching for implicit extensions for type: $targetType")
+
+    val context = doLocateContext(pos)
+    val buffer = mutable.ListBuffer.empty[WorkspaceImplicitMember]
+    val seenImplicitClasses = mutable.Set.empty[String]
+
+    /**
+     * Process a symbol that comes from search.search() - this returns classes/objects.
+     * We check if it's an implicit class and if its constructor parameter is compatible
+     * with the target type.
+     */
+    def processSymbol(sym: Symbol): Boolean = {
+      // Check if this is an implicit class
+      if (sym.isClass && sym.isImplicit && sym.isStatic) {
+        val implicitClassId = sym.fullName
+
+        // Only process each implicit class once
+        if (!seenImplicitClasses(implicitClassId)) {
+          seenImplicitClasses += implicitClassId
+
+          logger.info(s"[MetalsGlobal.findImplicitExtensionsForType] Checking implicit class: ${sym.fullName}")
+
+          // Check if the implicit class is accessible
+          if (context.isAccessible(sym, sym.info)) {
+            // Get the constructor to check type compatibility
+            val ownerConstructor = sym.info.member(nme.CONSTRUCTOR)
+            def typeParams = sym.info.typeParams
+
+            ownerConstructor.info.paramss match {
+              case List(List(param)) =>
+                val paramType = boundedWildcardType(param.info, typeParams)
+                val isCompatible = try {
+                  targetType <:< paramType
+                } catch {
+                  case NonFatal(e) =>
+                    logger.info(s"[MetalsGlobal.findImplicitExtensionsForType]   Type compatibility check failed: ${e.getMessage}")
+                    false
+                }
+
+                logger.info(s"[MetalsGlobal.findImplicitExtensionsForType]   Param type: $paramType, target: $targetType, compatible: $isCompatible")
+
+                if (isCompatible) {
+                  // Add ALL public methods from this implicit class
+                  val methods = sym.info.members.filter(m =>
+                    m.isMethod && !m.isConstructor && m.isPublic
+                  ).map(m => new WorkspaceImplicitMember(m))
+
+                  logger.info(s"[MetalsGlobal.findImplicitExtensionsForType]   Adding ${methods.size} methods from ${sym.fullName}")
+                  methods.take(3).foreach(m =>
+                    logger.info(s"[MetalsGlobal.findImplicitExtensionsForType]     - ${m.sym.name}")
+                  )
+                  buffer ++= methods
+                }
+              case _ =>
+                logger.info(s"[MetalsGlobal.findImplicitExtensionsForType]   Invalid constructor signature: ${ownerConstructor.info.paramss}")
+            }
+          } else {
+            logger.info(s"[MetalsGlobal.findImplicitExtensionsForType]   Not accessible")
+          }
+        }
+      }
+      true // Continue searching
+    }
+
+    // Search for implicit classes
+    // We use a broad query to avoid empty string issues, then filter in the visitor
+    // The query "Duration" is just to trigger the search - we'll process all results
+    val visitor = new CompilerSearchVisitor(context, processSymbol)
+
+    // Search with common implicit class prefixes to find candidates
+    // This is a heuristic - ideally we'd have a better way to query all implicit classes
+    val commonPrefixes = List("Duration", "Rich", "Wrapper", "Ops")
+    commonPrefixes.foreach { prefix =>
+      search.search(prefix, buildTargetIdentifier, visitor)
+    }
+
+    val result = buffer.toList.distinct
+    logger.info(s"[MetalsGlobal.findImplicitExtensionsForType] Found ${result.size} total implicit extension methods for $targetType")
+    result
+  }
+
+  /**
+   * Suggest implicit extension methods for a type that are NOT already in scope.
+   * This is useful for auto-import suggestions in completions.
+   *
+   * @param targetType The type for which to suggest implicit extensions
+   * @param pos The position in source
+   * @return List of implicit extension members that require imports
+   */
+  def suggestImplicitExtensionsInScope(
+      targetType: Type,
+      pos: Position
+  ): List[WorkspaceImplicitMember] = {
+    logger.info(s"[MetalsGlobal.suggestImplicitExtensionsInScope] Getting suggestions for type: $targetType")
+
+    // Find all implicit extensions for this type
+    val extensions = findImplicitExtensionsForType(targetType, pos)
+
+    // Filter out those already in scope (already imported)
+    val context = doLocateContext(pos)
+    val notInScope = extensions.filter { member =>
+      val implicitClass = member.sym.owner
+      // Check if this implicit class is NOT already in scope
+      context.lookupSymbol(implicitClass.name, _ => true) match {
+        case LookupSucceeded(_, found) if found == implicitClass =>
+          false // Already in scope
+        case _ =>
+          true // Not in scope, suggest it
+      }
+    }
+
+    logger.info(s"[MetalsGlobal.suggestImplicitExtensionsInScope] Found ${extensions.size} total, ${notInScope.size} not in scope")
+    notInScope
+  }
+
   def symbolDocumentation(
       symbol: Symbol,
       contentType: m.pc.ContentType = m.pc.ContentType.MARKDOWN

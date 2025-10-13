@@ -51,6 +51,7 @@ class CompletionProvider(
 
   def completions(): CompletionList = {
     val filename = params.uri().toString()
+    logger.info(s"[CompletionProvider] Starting completions for $filename at offset ${params.offset()}")
     val unit = addCompilationUnit(
       code = params.text,
       filename = filename,
@@ -63,6 +64,7 @@ class CompletionProvider(
 
     val (i, completion, identOffsets, editRange, query) =
       safeCompletionsAt(pos, params.uri())
+    logger.info(s"[CompletionProvider] Query: '$query', completion type: ${completion.getClass.getSimpleName}, found ${i.results.size} initial results")
 
     val InferredIdentOffsets(
       start,
@@ -102,6 +104,14 @@ class CompletionProvider(
           )
         case _ => acc.mkString(".")
       }
+    }
+
+    logger.info(s"[CompletionProvider] Processing ${sorted.size} sorted members for completion items")
+    sorted.take(10).foreach { member =>
+      logger.info(s"[CompletionProvider]   - ${member.getClass.getSimpleName}: ${member.sym.fullName} (owner: ${member.sym.owner.fullName})")
+    }
+    if (sorted.size > 10) {
+      logger.info(s"[CompletionProvider]   ... and ${sorted.size - 10} more")
     }
 
     val items = sorted.zipWithIndex.map { case (member, idx) =>
@@ -216,18 +226,25 @@ class CompletionProvider(
               )
             ) "($0)"
             else ""
+
+          // For implicit class extension methods, we need to import the implicit class,
+          // not the method itself. The method is accessed directly by name.
+          val implicitClass = m.sym.owner
           val (short, edits) = ShortenedNames.synthesize(
             TypeRef(
-              ThisType(m.sym.owner),
-              m.sym,
+              ThisType(implicitClass.owner),
+              implicitClass,
               Nil
             ),
             pos,
             context,
             impPos
           )
+
+          // Insert just the method name (not qualified)
+          val methodName = Identifier.backtickWrap(m.sym.name.decoded)
           val edit: l.TextEdit = textEdit(
-            short + suffix,
+            methodName + suffix,
             editRange
           )
           item.setTextEdit(edit)
@@ -427,14 +444,61 @@ class CompletionProvider(
       text
     )
 
+    logger.info(s"[CompletionProvider.filterInteresting] Query: '$query', kind: $kind, current results: ${buf.result().size}")
+
     val searchResults =
       if (kind == CompletionListKind.Scope) {
-        workspaceSymbolListMembers(query, pos, visit)
+        logger.info(s"[CompletionProvider.filterInteresting] Searching workspace symbols for scope completion")
+        val result = workspaceSymbolListMembers(query, pos, visit)
+        logger.info(s"[CompletionProvider.filterInteresting] Workspace symbol search result: $result, total results: ${buf.result().size}")
+
+        // TEST: Try to find implicit extensions for Int type
+        logger.info(s"[CompletionProvider.filterInteresting] TEST: Calling findImplicitExtensionsForType for Int")
+        try {
+          val intExtensions = findImplicitExtensionsForType(definitions.IntTpe, pos)
+          logger.info(s"[CompletionProvider.filterInteresting] TEST: Found ${intExtensions.size} implicit extensions for Int")
+          intExtensions.take(5).foreach { ext =>
+            logger.info(s"[CompletionProvider.filterInteresting] TEST:   - ${ext.sym.fullName}")
+          }
+        } catch {
+          case e: Exception =>
+            logger.info(s"[CompletionProvider.filterInteresting] TEST: Error finding implicit extensions: ${e.getMessage}")
+        }
+
+        result
       } else {
         typedTreeAt(pos) match {
           case Select(qualifier, _)
               if qualifier.tpe != null && !qualifier.tpe.isError =>
-            workspaceExtensionMethods(query, pos, visit, qualifier.tpe)
+            logger.info(s"[CompletionProvider.filterInteresting] Searching workspace extension methods for type: ${qualifier.tpe}")
+            val result = workspaceExtensionMethods(query, pos, visit, qualifier.tpe)
+            logger.info(s"[CompletionProvider.filterInteresting] Extension methods search result: $result, total results: ${buf.result().size}")
+
+            // Add implicit extension methods for this type
+            logger.info(s"[CompletionProvider.filterInteresting] Finding implicit extensions for ${qualifier.tpe}")
+            try {
+              val extensions = findImplicitExtensionsForType(qualifier.tpe, pos)
+              logger.info(s"[CompletionProvider.filterInteresting] Found ${extensions.size} implicit extension methods")
+
+              // Add the extension methods to the results
+              extensions.foreach { ext =>
+                // Filter out methods inherited from AnyVal (equals, hashCode, toString, etc.)
+                val isInheritedFromAnyVal = ext.sym.owner == definitions.AnyValClass ||
+                                           ext.sym.name == nme.equals_ ||
+                                           ext.sym.name == nme.hashCode_ ||
+                                           ext.sym.name == nme.toString_
+
+                if (!isInheritedFromAnyVal) {
+                  visit(ext)
+                }
+              }
+              logger.info(s"[CompletionProvider.filterInteresting] Added implicit extensions to results, total now: ${buf.result().size}")
+            } catch {
+              case e: Exception =>
+                logger.warning(s"[CompletionProvider.filterInteresting] Error finding implicit extensions: ${e.getMessage}")
+            }
+
+            result
           case _ => SymbolSearch.Result.COMPLETE
         }
       }
@@ -448,22 +512,31 @@ class CompletionProvider(
       visit: Member => Boolean,
       selectType: Type
   ): SymbolSearch.Result = {
+    logger.info(s"[CompletionProvider.workspaceExtensionMethods] Searching for extension methods with query '$query' for type $selectType")
     val context = doLocateContext(pos)
+    var implicitCount = 0
     val visitor = new CompilerSearchVisitor(
       context,
-      sym =>
+      sym => {
         if (sym.safeOwner.isImplicit && sym.owner.isStatic) {
+          implicitCount += 1
+          logger.info(s"[CompletionProvider.workspaceExtensionMethods] Found implicit: ${sym.fullName} in ${sym.owner.fullName}")
           val ownerConstructor = sym.owner.info.member(nme.CONSTRUCTOR)
           def typeParams = sym.owner.info.typeParams
           ownerConstructor.info.paramss match {
             case List(List(param))
                 if selectType <:< boundedWildcardType(param.info, typeParams) =>
-              visit(new WorkspaceImplicitMember(sym))
+              val result = visit(new WorkspaceImplicitMember(sym))
+              logger.info(s"[CompletionProvider.workspaceExtensionMethods] Type matches, added: $result")
+              result
             case _ => false
           }
         } else false
+      }
     )
-    search.searchMethods(query, buildTargetIdentifier, visitor)
+    val result = search.searchMethods(query, buildTargetIdentifier, visitor)
+    logger.info(s"[CompletionProvider.workspaceExtensionMethods] Completed search, found $implicitCount implicits, result: $result")
+    result
   }
 
   private def isFunction(symbol: Symbol): Boolean = {
