@@ -229,17 +229,27 @@ class CompletionProvider(
 
           // For implicit class extension methods, we need to import the implicit class,
           // not the method itself. The method is accessed directly by name.
-          val implicitClass = m.sym.owner
+          val implicitClass = m.implicitClass
+          logger.info(s"[CompletionProvider] WorkspaceImplicitMember: method=${m.sym.fullName}, implicitClass=${implicitClass.fullName}, owner=${implicitClass.owner.fullName}")
+
+          // Use SingleType instead of ThisType for proper path-dependent type handling
+          val typeRef = TypeRef(
+            if (implicitClass.owner.isPackageClass || implicitClass.owner.isEmptyPackageClass)
+              NoPrefix
+            else
+              SingleType(NoPrefix, implicitClass.owner.sourceModule),
+            implicitClass,
+            Nil
+          )
+
+          logger.info(s"[CompletionProvider] Creating TypeRef: $typeRef")
           val (short, edits) = ShortenedNames.synthesize(
-            TypeRef(
-              ThisType(implicitClass.owner),
-              implicitClass,
-              Nil
-            ),
+            typeRef,
             pos,
             context,
             impPos
           )
+          logger.info(s"[CompletionProvider] ShortenedNames.synthesize result: short='$short', edits=${edits.map(e => s"${e.getRange.getStart.getLine}:${e.getNewText}").mkString(", ")}")
 
           // Insert just the method name (not qualified)
           val methodName = Identifier.backtickWrap(m.sym.name.decoded)
@@ -526,7 +536,7 @@ class CompletionProvider(
           ownerConstructor.info.paramss match {
             case List(List(param))
                 if selectType <:< boundedWildcardType(param.info, typeParams) =>
-              val result = visit(new WorkspaceImplicitMember(sym))
+              val result = visit(new WorkspaceImplicitMember(sym, sym.owner))
               logger.info(s"[CompletionProvider.workspaceExtensionMethods] Type matches, added: $result")
               result
             case _ => false

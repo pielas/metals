@@ -326,9 +326,10 @@ class MetalsGlobal(
 
                 if (isCompatible) {
                   // Add ALL public methods from this implicit class
+                  // Pass the implicit class symbol (sym) along with each method
                   val methods = sym.info.members.filter(m =>
                     m.isMethod && !m.isConstructor && m.isPublic
-                  ).map(m => new WorkspaceImplicitMember(m))
+                  ).map(m => new WorkspaceImplicitMember(m, sym))
 
                   logger.info(s"[MetalsGlobal.findImplicitExtensionsForType]   Adding ${methods.size} methods from ${sym.fullName}")
                   methods.take(3).foreach(m =>
