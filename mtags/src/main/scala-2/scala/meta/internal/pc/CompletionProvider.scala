@@ -457,40 +457,58 @@ class CompletionProvider(
     logger.info(s"[CompletionProvider.filterInteresting] Query: '$query', kind: $kind, current results: ${buf.result().size}")
 
     val searchResults =
-        typedTreeAt(pos) match {
-          case Select(qualifier, _)
-              if qualifier.tpe != null && !qualifier.tpe.isError =>
-            logger.info(s"[CompletionProvider.filterInteresting] Searching workspace extension methods for type: ${qualifier.tpe}")
-            val result = workspaceExtensionMethods(query, pos, visit, qualifier.tpe)
-            logger.info(s"[CompletionProvider.filterInteresting] Extension methods search result: $result, total results: ${buf.result().size}")
+      if (kind == CompletionListKind.Scope) {
+        workspaceSymbolListMembers(query, pos, visit)
+      } else {
+      typedTreeAt(pos) match {
+        case Select(qualifier, _)
+            if qualifier.tpe != null && !qualifier.tpe.isError =>
+          logger.info(
+            s"[CompletionProvider.filterInteresting] Searching workspace extension methods for type: ${qualifier.tpe}"
+          )
+          val result =
+            workspaceExtensionMethods(query, pos, visit, qualifier.tpe)
+          logger.info(
+            s"[CompletionProvider.filterInteresting] Extension methods search result: $result, total results: ${buf.result().size}"
+          )
 
-            // Add implicit extension methods for this type
-            logger.info(s"[CompletionProvider.filterInteresting] Finding implicit extensions for ${qualifier.tpe}")
-            try {
-              val extensions = findImplicitExtensionsForType(qualifier.tpe, pos)
-              logger.info(s"[CompletionProvider.filterInteresting] Found ${extensions.size} implicit extension methods")
+          // Add implicit extension methods for this type
+          logger.info(
+            s"[CompletionProvider.filterInteresting] Finding implicit extensions for ${qualifier.tpe}"
+          )
+          try {
+            val extensions = findImplicitExtensionsForType(qualifier.tpe, pos)
+            logger.info(
+              s"[CompletionProvider.filterInteresting] Found ${extensions.size} implicit extension methods"
+            )
 
-              // Add the extension methods to the results
-              extensions.foreach { ext =>
-                // Filter out methods inherited from AnyVal (equals, hashCode, toString, etc.)
-                val isInheritedFromAnyVal = ext.sym.owner == definitions.AnyValClass ||
-                                           ext.sym.name == nme.equals_ ||
-                                           ext.sym.name == nme.hashCode_ ||
-                                           ext.sym.name == nme.toString_
+            // Add the extension methods to the results
+            extensions.foreach { ext =>
+              // Filter out methods inherited from AnyVal (equals, hashCode, toString, etc.)
+              val isInheritedFromAnyVal =
+                ext.sym.owner == definitions.AnyValClass ||
+                  ext.sym.name == nme.equals_ ||
+                  ext.sym.name == nme.hashCode_ ||
+                  ext.sym.name == nme.toString_
 
-                if (!isInheritedFromAnyVal) {
-                  visit(ext)
-                }
+              if (!isInheritedFromAnyVal) {
+                visit(ext)
               }
-              logger.info(s"[CompletionProvider.filterInteresting] Added implicit extensions to results, total now: ${buf.result().size}")
-            } catch {
-              case e: Exception =>
-                logger.warning(s"[CompletionProvider.filterInteresting] Error finding implicit extensions: ${e.getMessage}")
             }
+            logger.info(
+              s"[CompletionProvider.filterInteresting] Added implicit extensions to results, total now: ${buf.result().size}"
+            )
+          } catch {
+            case e: Exception =>
+              logger.warning(
+                s"[CompletionProvider.filterInteresting] Error finding implicit extensions: ${e.getMessage}"
+              )
+          }
 
-            result
-          case _ => SymbolSearch.Result.COMPLETE
-        }
+          result
+        case _ => SymbolSearch.Result.COMPLETE
+      }
+    }
 
     InterestingMembers(buf.result(), searchResults)
   }
