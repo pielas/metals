@@ -457,26 +457,6 @@ class CompletionProvider(
     logger.info(s"[CompletionProvider.filterInteresting] Query: '$query', kind: $kind, current results: ${buf.result().size}")
 
     val searchResults =
-      if (kind == CompletionListKind.Scope) {
-        logger.info(s"[CompletionProvider.filterInteresting] Searching workspace symbols for scope completion")
-        val result = workspaceSymbolListMembers(query, pos, visit)
-        logger.info(s"[CompletionProvider.filterInteresting] Workspace symbol search result: $result, total results: ${buf.result().size}")
-
-        // TEST: Try to find implicit extensions for Int type
-        logger.info(s"[CompletionProvider.filterInteresting] TEST: Calling findImplicitExtensionsForType for Int")
-        try {
-          val intExtensions = findImplicitExtensionsForType(definitions.IntTpe, pos)
-          logger.info(s"[CompletionProvider.filterInteresting] TEST: Found ${intExtensions.size} implicit extensions for Int")
-          intExtensions.take(5).foreach { ext =>
-            logger.info(s"[CompletionProvider.filterInteresting] TEST:   - ${ext.sym.fullName}")
-          }
-        } catch {
-          case e: Exception =>
-            logger.info(s"[CompletionProvider.filterInteresting] TEST: Error finding implicit extensions: ${e.getMessage}")
-        }
-
-        result
-      } else {
         typedTreeAt(pos) match {
           case Select(qualifier, _)
               if qualifier.tpe != null && !qualifier.tpe.isError =>
@@ -511,7 +491,6 @@ class CompletionProvider(
             result
           case _ => SymbolSearch.Result.COMPLETE
         }
-      }
 
     InterestingMembers(buf.result(), searchResults)
   }
