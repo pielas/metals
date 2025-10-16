@@ -271,9 +271,9 @@ class MetalsGlobal(
   /**
    * Find all implicit class extension methods available for a specific type.
    *
-   * This method searches for implicit classes (using search.search()) and then extracts
-   * their methods using the presentation compiler. This works for both workspace and
-   * classpath implicit classes.
+   * This method iterates through ALL classpath classes to find implicit classes,
+   * then extracts their methods using the presentation compiler. This works for both
+   * workspace and classpath implicit classes.
    *
    * @param targetType The type for which to find implicit extensions (e.g., Int, String)
    * @param pos The position in the source code (used for context and accessibility checks)
@@ -283,31 +283,34 @@ class MetalsGlobal(
       targetType: Type,
       pos: Position
   ): List[WorkspaceImplicitMember] = {
+    val startTime = System.currentTimeMillis()
     logger.info(s"[MetalsGlobal.findImplicitExtensionsForType] Searching for implicit extensions for type: $targetType")
 
     val context = doLocateContext(pos)
     val buffer = mutable.ListBuffer.empty[WorkspaceImplicitMember]
     val seenImplicitClasses = mutable.Set.empty[String]
+    var classesChecked = 0
+    var implicitClassesFound = 0
 
     /**
-     * Process a symbol that comes from search.search() - this returns classes/objects.
+     * Process a symbol from the classpath - this returns classes/objects.
      * We check if it's an implicit class and if its constructor parameter is compatible
      * with the target type.
      */
     def processSymbol(sym: Symbol): Boolean = {
-      // Check if this is an implicit class
+      classesChecked += 1
+
       if (sym.isClass && sym.isImplicit && sym.isStatic) {
+        implicitClassesFound += 1
         val implicitClassId = sym.fullName
 
         // Only process each implicit class once
         if (!seenImplicitClasses(implicitClassId)) {
           seenImplicitClasses += implicitClassId
 
-          logger.info(s"[MetalsGlobal.findImplicitExtensionsForType] Checking implicit class: ${sym.fullName}")
+          logger.info(s"[MetalsGlobal.findImplicitExtensionsForType] Found implicit class #$implicitClassesFound: ${sym.fullName}")
 
-          // Check if the implicit class is accessible
           if (context.isAccessible(sym, sym.info)) {
-            // Get the constructor to check type compatibility
             val ownerConstructor = sym.info.member(nme.CONSTRUCTOR)
             def typeParams = sym.info.typeParams
 
@@ -325,8 +328,6 @@ class MetalsGlobal(
                 logger.info(s"[MetalsGlobal.findImplicitExtensionsForType]   Param type: $paramType, target: $targetType, compatible: $isCompatible")
 
                 if (isCompatible) {
-                  // Add ALL public methods from this implicit class
-                  // Pass the implicit class symbol (sym) along with each method
                   val methods = sym.info.members.filter(m =>
                     m.isMethod && !m.isConstructor && m.isPublic
                   ).map(m => new WorkspaceImplicitMember(m, sym))
@@ -345,23 +346,24 @@ class MetalsGlobal(
           }
         }
       }
-      true // Continue searching
+      true
     }
 
-    // Search for implicit classes
-    // We use a broad query to avoid empty string issues, then filter in the visitor
-    // The query "Duration" is just to trigger the search - we'll process all results
-    val visitor = new CompilerSearchVisitor(context, processSymbol)
-
-    // Search with common implicit class prefixes to find candidates
-    // This is a heuristic - ideally we'd have a better way to query all implicit classes
-    val commonPrefixes = List("Duration", "Rich", "Wrapper", "Ops")
-    commonPrefixes.foreach { prefix =>
-      search.search(prefix, buildTargetIdentifier, visitor)
+    val visitor = new CompilerSearchVisitor(context, processSymbol) {
+      override def shouldVisitPackage(pkg: String): Boolean = true
     }
 
+    val visitedCount = search.iterateAllClasspathClasses(visitor)
+
+    val elapsedMs = System.currentTimeMillis() - startTime
     val result = buffer.toList.distinct
-    logger.info(s"[MetalsGlobal.findImplicitExtensionsForType] Found ${result.size} total implicit extension methods for $targetType")
+    logger.info(s"[MetalsGlobal.findImplicitExtensionsForType] Performance stats:")
+    logger.info(s"[MetalsGlobal.findImplicitExtensionsForType]   Total time: ${elapsedMs}ms")
+    logger.info(s"[MetalsGlobal.findImplicitExtensionsForType]   Classfiles visited: $visitedCount")
+    logger.info(s"[MetalsGlobal.findImplicitExtensionsForType]   Classes checked: $classesChecked")
+    logger.info(s"[MetalsGlobal.findImplicitExtensionsForType]   Implicit classes found: $implicitClassesFound")
+    logger.info(s"[MetalsGlobal.findImplicitExtensionsForType]   Unique implicit classes: ${seenImplicitClasses.size}")
+    logger.info(s"[MetalsGlobal.findImplicitExtensionsForType]   Extension methods found: ${result.size}")
     result
   }
 
