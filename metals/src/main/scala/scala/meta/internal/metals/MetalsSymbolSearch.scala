@@ -143,12 +143,9 @@ class MetalsSymbolSearch(
    */
   override def iterateAllClasspathClasses(visitor: SymbolSearchVisitor): Int = {
     var count = 0
-    // Access the underlying ClasspathSearch packages
     val classpathPackages = wsp.inDependencies.packages
 
-    // Iterate through all compressed packages
     classpathPackages.foreach { compressedPkg =>
-      // Decompress and iterate through all members
       compressedPkg.members.foreach { classfile =>
         if (classfile.isClassfile && visitor.shouldVisitPackage(classfile.pkg)) {
           count += visitor.visitClassfile(classfile.pkg, classfile.filename)
