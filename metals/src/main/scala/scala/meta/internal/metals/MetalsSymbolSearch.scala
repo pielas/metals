@@ -147,7 +147,9 @@ class MetalsSymbolSearch(
 
     classpathPackages.foreach { compressedPkg =>
       compressedPkg.members.foreach { classfile =>
-        if (classfile.isClassfile && visitor.shouldVisitPackage(classfile.pkg)) {
+        if (
+          classfile.isClassfile && visitor.shouldVisitPackage(classfile.pkg)
+        ) {
           count += visitor.visitClassfile(classfile.pkg, classfile.filename)
         }
       }

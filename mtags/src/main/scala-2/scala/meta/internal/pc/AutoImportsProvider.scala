@@ -42,12 +42,16 @@ final class AutoImportsProvider(
     }
 
     compiler.searchOutline(visit, name)
-    logger.info(s"[AutoImports] After searchOutline for '$name': found ${symbols.result().size} symbols from compiler outline")
+    logger.info(
+      s"[AutoImports] After searchOutline for '$name': found ${symbols.result().size} symbols from compiler outline"
+    )
 
     val visitor =
       new CompilerSearchVisitor(context, visit)
     search.search(name, buildTargetIdentifier, visitor)
-    logger.info(s"[AutoImports] After search.search for '$name': total ${symbols.result().size} symbols found")
+    logger.info(
+      s"[AutoImports] After search.search for '$name': total ${symbols.result().size} symbols found"
+    )
 
     def isInImportTree: Boolean = lastVisitedParentTrees match {
       case (_: Import) :: _ => true
@@ -79,9 +83,13 @@ final class AutoImportsProvider(
       sym.name.dropLocal.decoded == name
 
     val allSymbols = symbols.result()
-    logger.info(s"[AutoImports] Processing ${allSymbols.size} symbols for '$name':")
+    logger.info(
+      s"[AutoImports] Processing ${allSymbols.size} symbols for '$name':"
+    )
     allSymbols.foreach { sym =>
-      logger.info(s"[AutoImports]   - ${sym.fullName} (owner: ${sym.owner.fullName}, accessible: ${context.isAccessible(sym, sym.info)}, exactMatch: ${isExactMatch(sym, name)})")
+      logger.info(
+        s"[AutoImports]   - ${sym.fullName} (owner: ${sym.owner.fullName}, accessible: ${context.isAccessible(sym, sym.info)}, exactMatch: ${isExactMatch(sym, name)})"
+      )
     }
 
     val all = allSymbols.collect {
@@ -91,7 +99,9 @@ final class AutoImportsProvider(
             sym.info
           ) && !sym.owner.isEmptyPackageClass =>
         val pkg = sym.owner.fullName
-        logger.info(s"[AutoImports] Symbol matched all filters: ${sym.fullName} from package $pkg")
+        logger.info(
+          s"[AutoImports] Symbol matched all filters: ${sym.fullName} from package $pkg"
+        )
         val edits = importPosition match {
           // if we are in import section just specify full name
           case None if isInImportTree =>
@@ -133,17 +143,25 @@ final class AutoImportsProvider(
         logger.info(s"[AutoImports] No results found")
         Nil
       case moreResults =>
-        logger.info(s"[AutoImports] Multiple results (${moreResults.size}), checking tree context")
+        logger.info(
+          s"[AutoImports] Multiple results (${moreResults.size}), checking tree context"
+        )
         val moreExact = moreResults.filter { case (_, sym) =>
           val correct = correctInTreeContext(sym)
-          logger.info(s"[AutoImports]   - ${sym.fullName}: correctInTreeContext=$correct")
+          logger.info(
+            s"[AutoImports]   - ${sym.fullName}: correctInTreeContext=$correct"
+          )
           correct
         }
         if (moreExact.nonEmpty) {
-          logger.info(s"[AutoImports] Returning ${moreExact.size} context-filtered results")
+          logger.info(
+            s"[AutoImports] Returning ${moreExact.size} context-filtered results"
+          )
           moreExact.map(_._1)
         } else {
-          logger.info(s"[AutoImports] Returning all ${moreResults.size} results")
+          logger.info(
+            s"[AutoImports] Returning all ${moreResults.size} results"
+          )
           moreResults.map(_._1)
         }
     }

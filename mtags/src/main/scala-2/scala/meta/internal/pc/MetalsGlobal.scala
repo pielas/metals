@@ -284,7 +284,9 @@ class MetalsGlobal(
       pos: Position
   ): List[WorkspaceImplicitMember] = {
     val startTime = System.currentTimeMillis()
-    logger.info(s"[MetalsGlobal.findImplicitExtensionsForType] Searching for implicit extensions for type: $targetType")
+    logger.info(
+      s"[MetalsGlobal.findImplicitExtensionsForType] Searching for implicit extensions for type: $targetType"
+    )
 
     val context = doLocateContext(pos)
     val buffer = mutable.ListBuffer.empty[WorkspaceImplicitMember]
@@ -308,7 +310,9 @@ class MetalsGlobal(
         if (!seenImplicitClasses(implicitClassId)) {
           seenImplicitClasses += implicitClassId
 
-          logger.info(s"[MetalsGlobal.findImplicitExtensionsForType] Found implicit class #$implicitClassesFound: ${sym.fullName}")
+          logger.info(
+            s"[MetalsGlobal.findImplicitExtensionsForType] Found implicit class #$implicitClassesFound: ${sym.fullName}"
+          )
 
           if (context.isAccessible(sym, sym.info)) {
             val ownerConstructor = sym.info.member(nme.CONSTRUCTOR)
@@ -317,32 +321,47 @@ class MetalsGlobal(
             ownerConstructor.info.paramss match {
               case List(List(param)) =>
                 val paramType = boundedWildcardType(param.info, typeParams)
-                val isCompatible = try {
-                  targetType <:< paramType
-                } catch {
-                  case NonFatal(e) =>
-                    logger.info(s"[MetalsGlobal.findImplicitExtensionsForType]   Type compatibility check failed: ${e.getMessage}")
-                    false
-                }
+                val isCompatible =
+                  try {
+                    targetType <:< paramType
+                  } catch {
+                    case NonFatal(e) =>
+                      logger.info(
+                        s"[MetalsGlobal.findImplicitExtensionsForType]   Type compatibility check failed: ${e.getMessage}"
+                      )
+                      false
+                  }
 
-                logger.info(s"[MetalsGlobal.findImplicitExtensionsForType]   Param type: $paramType, target: $targetType, compatible: $isCompatible")
+                logger.info(
+                  s"[MetalsGlobal.findImplicitExtensionsForType]   Param type: $paramType, target: $targetType, compatible: $isCompatible"
+                )
 
                 if (isCompatible) {
-                  val methods = sym.info.members.filter(m =>
-                    m.isMethod && !m.isConstructor && m.isPublic
-                  ).map(m => new WorkspaceImplicitMember(m, sym))
+                  val methods = sym.info.members
+                    .filter(m => m.isMethod && !m.isConstructor && m.isPublic)
+                    .map(m => new WorkspaceImplicitMember(m, sym))
 
-                  logger.info(s"[MetalsGlobal.findImplicitExtensionsForType]   Adding ${methods.size} methods from ${sym.fullName}")
-                  methods.take(3).foreach(m =>
-                    logger.info(s"[MetalsGlobal.findImplicitExtensionsForType]     - ${m.sym.name}")
+                  logger.info(
+                    s"[MetalsGlobal.findImplicitExtensionsForType]   Adding ${methods.size} methods from ${sym.fullName}"
                   )
+                  methods
+                    .take(3)
+                    .foreach(m =>
+                      logger.info(
+                        s"[MetalsGlobal.findImplicitExtensionsForType]     - ${m.sym.name}"
+                      )
+                    )
                   buffer ++= methods
                 }
               case _ =>
-                logger.info(s"[MetalsGlobal.findImplicitExtensionsForType]   Invalid constructor signature: ${ownerConstructor.info.paramss}")
+                logger.info(
+                  s"[MetalsGlobal.findImplicitExtensionsForType]   Invalid constructor signature: ${ownerConstructor.info.paramss}"
+                )
             }
           } else {
-            logger.info(s"[MetalsGlobal.findImplicitExtensionsForType]   Not accessible")
+            logger.info(
+              s"[MetalsGlobal.findImplicitExtensionsForType]   Not accessible"
+            )
           }
         }
       }
@@ -357,13 +376,27 @@ class MetalsGlobal(
 
     val elapsedMs = System.currentTimeMillis() - startTime
     val result = buffer.toList.distinct
-    logger.info(s"[MetalsGlobal.findImplicitExtensionsForType] Performance stats:")
-    logger.info(s"[MetalsGlobal.findImplicitExtensionsForType]   Total time: ${elapsedMs}ms")
-    logger.info(s"[MetalsGlobal.findImplicitExtensionsForType]   Classfiles visited: $visitedCount")
-    logger.info(s"[MetalsGlobal.findImplicitExtensionsForType]   Classes checked: $classesChecked")
-    logger.info(s"[MetalsGlobal.findImplicitExtensionsForType]   Implicit classes found: $implicitClassesFound")
-    logger.info(s"[MetalsGlobal.findImplicitExtensionsForType]   Unique implicit classes: ${seenImplicitClasses.size}")
-    logger.info(s"[MetalsGlobal.findImplicitExtensionsForType]   Extension methods found: ${result.size}")
+    logger.info(
+      s"[MetalsGlobal.findImplicitExtensionsForType] Performance stats:"
+    )
+    logger.info(
+      s"[MetalsGlobal.findImplicitExtensionsForType]   Total time: ${elapsedMs}ms"
+    )
+    logger.info(
+      s"[MetalsGlobal.findImplicitExtensionsForType]   Classfiles visited: $visitedCount"
+    )
+    logger.info(
+      s"[MetalsGlobal.findImplicitExtensionsForType]   Classes checked: $classesChecked"
+    )
+    logger.info(
+      s"[MetalsGlobal.findImplicitExtensionsForType]   Implicit classes found: $implicitClassesFound"
+    )
+    logger.info(
+      s"[MetalsGlobal.findImplicitExtensionsForType]   Unique implicit classes: ${seenImplicitClasses.size}"
+    )
+    logger.info(
+      s"[MetalsGlobal.findImplicitExtensionsForType]   Extension methods found: ${result.size}"
+    )
     result
   }
 
@@ -379,7 +412,9 @@ class MetalsGlobal(
       targetType: Type,
       pos: Position
   ): List[WorkspaceImplicitMember] = {
-    logger.info(s"[MetalsGlobal.suggestImplicitExtensionsInScope] Getting suggestions for type: $targetType")
+    logger.info(
+      s"[MetalsGlobal.suggestImplicitExtensionsInScope] Getting suggestions for type: $targetType"
+    )
 
     // Find all implicit extensions for this type
     val extensions = findImplicitExtensionsForType(targetType, pos)
@@ -397,7 +432,9 @@ class MetalsGlobal(
       }
     }
 
-    logger.info(s"[MetalsGlobal.suggestImplicitExtensionsInScope] Found ${extensions.size} total, ${notInScope.size} not in scope")
+    logger.info(
+      s"[MetalsGlobal.suggestImplicitExtensionsInScope] Found ${extensions.size} total, ${notInScope.size} not in scope"
+    )
     notInScope
   }
 

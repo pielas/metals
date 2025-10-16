@@ -198,7 +198,9 @@ trait WorkspaceSymbolSearch { compiler: MetalsGlobal =>
       classfile: SymbolSearchCandidate,
       context: Context
   ): List[Symbol] = {
-    logger.info(s"[WorkspaceSymbolSearch] loadSymbolFromClassfile called with classfile: $classfile")
+    logger.info(
+      s"[WorkspaceSymbolSearch] loadSymbolFromClassfile called with classfile: $classfile"
+    )
     def isAccessible(sym: Symbol): Boolean = {
       context.isAccessible(sym, sym.info)
     }
