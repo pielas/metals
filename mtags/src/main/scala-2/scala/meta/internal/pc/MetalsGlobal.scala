@@ -400,44 +400,6 @@ class MetalsGlobal(
     result
   }
 
-  /**
-   * Suggest implicit extension methods for a type that are NOT already in scope.
-   * This is useful for auto-import suggestions in completions.
-   *
-   * @param targetType The type for which to suggest implicit extensions
-   * @param pos The position in source
-   * @return List of implicit extension members that require imports
-   */
-  def suggestImplicitExtensionsInScope(
-      targetType: Type,
-      pos: Position
-  ): List[WorkspaceImplicitMember] = {
-    logger.info(
-      s"[MetalsGlobal.suggestImplicitExtensionsInScope] Getting suggestions for type: $targetType"
-    )
-
-    // Find all implicit extensions for this type
-    val extensions = findImplicitExtensionsForType(targetType, pos)
-
-    // Filter out those already in scope (already imported)
-    val context = doLocateContext(pos)
-    val notInScope = extensions.filter { member =>
-      val implicitClass = member.sym.owner
-      // Check if this implicit class is NOT already in scope
-      context.lookupSymbol(implicitClass.name, _ => true) match {
-        case LookupSucceeded(_, found) if found == implicitClass =>
-          false // Already in scope
-        case _ =>
-          true // Not in scope, suggest it
-      }
-    }
-
-    logger.info(
-      s"[MetalsGlobal.suggestImplicitExtensionsInScope] Found ${extensions.size} total, ${notInScope.size} not in scope"
-    )
-    notInScope
-  }
-
   def symbolDocumentation(
       symbol: Symbol,
       contentType: m.pc.ContentType = m.pc.ContentType.MARKDOWN
